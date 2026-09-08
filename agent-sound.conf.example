@@ -1,0 +1,26 @@
+# Settings for the agent notification hits, read by every provider.
+# Environment variables override anything set here.
+
+# Speech is OFF. Nothing is ever spoken aloud.
+# AGENT_NOTIFY_SPEAK=1
+
+# Voice, if speech is ever turned back on. `say -v '?'` lists them.
+# AGENT_NOTIFY_VOICE=Daniel
+
+# Uncomment to drop the notification banners too and keep only the hits.
+# AGENT_NOTIFY_DISABLE=1
+
+# Where a notification click goes when the session's host terminal is unknown.
+# One of: vscode | Apple_Terminal | WarpTerminal | iTerm.app
+# AGENT_FOCUS_DEFAULT=vscode
+
+# Set to 0 to only activate VS Code on click, without running `code <folder>`
+# to raise the window holding that workspace.
+# AGENT_FOCUS_VSCODE_OPEN=0
+
+# On-screen HUD popup size. Takes effect immediately, no rebuild needed.
+# Defaults are 320 x 68. AGENT_HUD_SCALE multiplies both.
+# AGENT_HUD_WIDTH=360
+# AGENT_HUD_HEIGHT=64
+# AGENT_HUD_SCALE=1.0
+# AGENT_HUD_HINTS=0

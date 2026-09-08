@@ -1,0 +1,8 @@
+bin/
+*.o
+__pycache__/
+*.pyc
+.DS_Store
+*.bak-*
+*.vsix
+node_modules/

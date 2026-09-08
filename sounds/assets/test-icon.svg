@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <pattern id="h" width="24" height="24" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="24" height="24" fill="#1c1c1e"/>
+      <rect width="12" height="24" fill="#ffcc00"/>
+    </pattern>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#h)"/>
+  <rect x="8" y="44" width="112" height="40" rx="8" fill="#1c1c1e" opacity="0.92"/>
+  <text x="64" y="72" font-family="Helvetica,Arial,sans-serif" font-size="26"
+        font-weight="700" fill="#ffcc00" text-anchor="middle" letter-spacing="2">TEST</text>
+</svg>

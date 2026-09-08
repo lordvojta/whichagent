@@ -1,0 +1,33 @@
+{
+  "name": "claude-terminal-focus",
+  "displayName": "Claude Terminal Focus",
+  "description": "Focus the exact VS Code integrated terminal a Claude Code session is running in, from an external vscode:// link.",
+  "publisher": "local",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeTerminalFocus.list",
+        "title": "Claude Focus: List Terminals and TTYs"
+      },
+      {
+        "command": "claudeTerminalFocus.focusSession",
+        "title": "Claude Focus: Focus a Session's Terminal"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR-USER/agentcue"
+  }
+}
