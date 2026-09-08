@@ -1,5 +1,9 @@
 # whichagent
 
+![macOS only](https://img.shields.io/badge/platform-macOS%20only-000000?logo=apple&logoColor=white)
+![License MIT](https://img.shields.io/badge/license-MIT-blue)
+![Claude Code · Codex · opencode · Warp](https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20opencode%20%C2%B7%20Warp-6c47ff)
+
 **Which agent wants me, what does it want, and take me back to it.**
 
 Sound and desktop notifications for Claude Code, Codex, opencode and Warp. Plus the
@@ -9,7 +13,9 @@ asked, including the right integrated terminal inside VS Code.
 Every tool in this space plays you a sound. Once you run more than a couple of agents
 at once, the question you actually have is *which one*, and then *where was it?*
 
-macOS. MIT.
+> **macOS only, and not portable in principle.** The audio engine is AVAudioEngine, the
+> banner is an AppKit window, and focus goes through AppleScript. There is no Linux or
+> Windows path and none is planned. If you are not on a Mac, this is not for you.
 
 ## Install
 
@@ -97,7 +103,7 @@ and terminal sessions are never in it.
 
 ## Limits
 
-- **macOS only.** AVAudioEngine, AppKit and AppleScript throughout.
+- **macOS only.** See the note at the top: this is not portable in principle.
 - **VS Code multi-window.** A `vscode://` URI reaches one window. If the session is in
   another, focus lands on the window, not the terminal.
 - **Per-tab focus is Terminal.app only.** It is the only terminal exposing tab ttys over
