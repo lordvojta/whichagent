@@ -6,115 +6,105 @@ Sound and desktop notifications for Claude Code, Codex, opencode and Warp. Plus 
 part nobody else does: one keystroke returns you to the *exact terminal session* that
 asked, including the right integrated terminal inside VS Code.
 
-Once you run more than a couple of agents at once, "something finished" stops being
-useful. Every tool in this space will play you a sound. The question you actually have
-is *which one*, and then: *where was it?*
+Every tool in this space plays you a sound. Once you run more than a couple of agents
+at once, the question you actually have is *which one*, and then *where was it?*
 
 macOS. MIT.
-
-## What it does
-
-**Sound carries meaning.** Timbre identifies the provider, melodic contour identifies
-the event. A finished turn, a plan waiting for review and a blocked prompt are three
-different phrases, so you can keep typing and still know what happened.
-
-**Banners answer "which one".** A stack in the corner of the screen, each carrying the
-project's own icon, its name, branch and path, plus a badge for the event: a green
-check for finished, a blue clipboard for a plan, an orange question mark for blocked.
-
-**One keystroke goes back.** `⌘⌃↩` jumps to whichever session asked for you.
-Numbered shortcuts reach the others. It resolves the actual terminal, including the
-right integrated terminal inside VS Code, not just the right window.
 
 ## Install
 
 Needs the Xcode Command Line Tools (`xcode-select --install`). Nothing else.
 
 ```sh
-git clone https://github.com/YOUR-USER/whichagent
+git clone https://github.com/lordvojta/whichagent
 cd whichagent
 make
 ./install.sh
 ```
 
-`install.sh` merges its hooks into your existing `~/.claude/settings.json` rather than
-replacing it, and backs the file up first.
+`install.sh` merges into your existing `~/.claude/settings.json` and backs it up first.
+It never touches hooks it did not add. `./install.sh --dry-run` shows you what it would
+do; `--uninstall` removes only its own entries.
 
-Nothing is downloaded as a binary, deliberately: you compile the three native helpers
-locally, so macOS never asks you to trust an unsigned executable from the internet.
+You compile the three helpers yourself, so macOS never asks you to trust an unsigned
+binary from the internet.
 
-## How it fits together
+## What you get
 
-```
-Claude Code hook ─→ hooks/agent-sound.sh ─┬─→ hitplay      (warm audio daemon)
-                                          └─→ agent-notify.sh ─→ agenthud (banner daemon)
+**A sound that means something.** Timbre tells you the provider, melody tells you the
+event. A finished turn, a plan waiting for review and a blocked prompt are three
+different phrases, so you can keep typing and still know what happened.
 
-⌘⌃↩ ─→ Hammerspoon ─→ agenthud --focus ─→ the banner's own click command
-                                          └─→ agent-focus.sh ─→ Terminal tab / Warp /
-                                                                VS Code integrated terminal
-```
+**A banner that says which project.** Bottom-right stack, each with the project's own
+icon, name, branch and path, a coloured ring per repo, and a badge for the event:
+green check finished, blue clipboard plan ready, orange question mark needs you.
 
-**Two long-lived daemons, not per-event processes.** `afplay` costs a fixed ~800ms of
-process startup on every invocation. Holding an `AVAudioEngine` open and poking it over
-a FIFO took the hook from **1.1s to 0.02s**. The banner daemon exists for a different
-reason: five independent processes cannot lay out a shared stack, so gaps and overlaps
-were unavoidable until one process owned every window.
+**A key that takes you back.**
 
-**The banner draws its own windows.** It is an `NSPanel`, not a Notification Center
-notification, so it needs no notification permission, cannot be silenced by a stale
-consent decision, and can be sized and styled freely. It is also non-activating, so it
-never steals focus mid-keystroke.
+| | |
+|---|---|
+| `⌘⌃↩` | jump to the session that asked |
+| `⌘⌃1`…`5` | jump to a specific banner |
+| `⌘⌃⌫` | dismiss all banners |
 
-**Focusing a VS Code terminal** works by a join key that already existed on both sides:
-VS Code exposes `Terminal.processId`, a pid resolves to a tty via `ps`, and the session
-registry already records each session's ttys. The bundled extension closes the loop.
-The Claude Code extension's own `vscode://` handler cannot do this: it only reveals
-sessions in its panel map, and terminal sessions are never in it.
+## Configure
 
-## Configuration
+Optional. Defaults are the intended experience. Edit `~/.claude/agent-sound.conf`.
 
-Copy `agent-sound.conf.example` to `~/.claude/agent-sound.conf`. Everything is
-optional; the defaults are the intended experience.
-
-| Setting | Default | |
+| | default | |
 |---|---|---|
-| `AGENT_HUD_WIDTH` / `AGENT_HUD_HEIGHT` | `360` / `64` | Banner size |
-| `AGENT_HUD_SCALE` | `1.0` | Scales box *and* text together |
-| `AGENT_HUD_ANCHOR_BOTTOM` | `1` | Bottom-right; `0` for top-right |
-| `AGENT_HUD_HINTS` | `1` | Show the keybind hint line |
-| `AGENT_HUD_INDEX` | `1` | Number the banners when several are up |
-| `AGENT_FOCUS_DEFAULT` | `vscode` | Where to go when a session's host is unknown |
-| `AGENT_SOUND_PAUSE_MUSIC` | `0` | Pause Spotify/Music while a cue plays |
-| `AGENT_NOTIFY_DISABLE` | `0` | Sound only, no banner |
-| `AGENT_NOTIFY_TEST` | `0` | Force the TEST icon and title prefix |
-| `AGENT_HUD_HINT_TEXT` | keybind hint | Override the hint line |
+| `AGENT_HUD_WIDTH` / `_HEIGHT` | `360` / `64` | banner size |
+| `AGENT_HUD_SCALE` | `1.0` | scales box **and text** together |
+| `AGENT_HUD_ANCHOR_BOTTOM` | `1` | `0` puts the stack top-right |
+| `AGENT_HUD_HINTS` | `1` | keybind hint line |
+| `AGENT_HUD_INDEX` | `1` | number the banners when several are up |
+| `AGENT_FOCUS_DEFAULT` | `vscode` | where to go when a host is unknown |
+| `AGENT_SOUND_PAUSE_MUSIC` | `0` | pause Spotify/Music while a cue plays |
+| `AGENT_NOTIFY_DISABLE` | `0` | sound only, no banner |
 
-`AGENT_HUD_SCALE` is the knob people reach for to make banners smaller, and it is
-usually the wrong one: font size derives from it, so shrinking the box shrinks the text
-with it. For a smaller banner that stays readable, reduce `AGENT_HUD_HEIGHT` and leave
-the scale alone.
+To make banners smaller, reduce `AGENT_HUD_HEIGHT`. Do not reach for
+`AGENT_HUD_SCALE`: font size derives from it, so it shrinks the text too.
 
-## Try it without wiring anything up
+## Try it
 
 ```sh
-hooks/agent-demo.sh          # the full walkthrough
-hooks/soundcheck.sh          # every cue, labelled
-hooks/notify-test.sh         # diagnose banner delivery
+~/.claude/hooks/agent-demo.sh     # the walkthrough
+~/.claude/hooks/soundcheck.sh     # every cue, labelled
+~/.claude/hooks/notify-test.sh    # diagnose banner delivery
 ```
 
-Test banners always carry a black-and-yellow **TEST** icon, so a demo can never be
-mistaken for a real session.
+Test banners always carry a black-and-yellow TEST icon, so a demo can never be mistaken
+for a real session.
 
-## Known limits
+## How it works
 
-- **macOS only.** `AVAudioEngine`, AppKit and AppleScript throughout.
-- **VS Code multi-window.** A `vscode://` URI reaches one window. If the session's
-  terminal is in a different one, focus lands on the window, not the terminal.
-- **Notification Center is optional and often blocked.** macOS persists a denied
-  notification consent in `com.apple.ncprefs`, where `tccutil` cannot clear it. The
-  self-drawn banner exists precisely so this does not matter.
-- **Per-tab focus only works in Terminal.app.** It is the only terminal exposing tab
-  ttys over AppleScript. Warp and iTerm get window-level focus.
+Two long-lived daemons rather than a process per event.
+
+`hitplay` holds an `AVAudioEngine` open and is poked over a FIFO. `afplay` costs a fixed
+~800ms of process startup every time it runs, so this took the hook from **1.1s to
+0.02s**.
+
+`agenthud` owns every banner window. Independent processes cannot lay out a shared
+stack, so gaps and overlaps were unavoidable until one process owned the layout. The
+banner is a self-drawn `NSPanel`, not a Notification Center notification, so it needs no
+notification permission and never steals focus mid-keystroke.
+
+Focusing a specific VS Code terminal uses a join key that already existed on both sides:
+VS Code exposes `Terminal.processId`, a pid resolves to a tty via `ps`, and the session
+registry already records ttys. The bundled extension closes the loop. Claude Code's own
+`vscode://` handler cannot do this, because it only reveals sessions in its panel map
+and terminal sessions are never in it.
+
+## Limits
+
+- **macOS only.** AVAudioEngine, AppKit and AppleScript throughout.
+- **VS Code multi-window.** A `vscode://` URI reaches one window. If the session is in
+  another, focus lands on the window, not the terminal.
+- **Per-tab focus is Terminal.app only.** It is the only terminal exposing tab ttys over
+  AppleScript. Warp and iTerm get window-level focus.
+- **Notification Center is optional.** macOS persists a denied consent in
+  `com.apple.ncprefs` where `tccutil` cannot clear it. The self-drawn banner exists so
+  that does not matter.
 
 ## License
 
