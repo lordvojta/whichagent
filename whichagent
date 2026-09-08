@@ -5,6 +5,7 @@
     whichagent count      how many need action, for the menu bar
     whichagent json       machine readable
     whichagent focus <n>  jump to the nth row
+    whichagent watch      the board, refreshing in place
 
 Joins two directories that are deliberately kept apart:
 
@@ -177,6 +178,24 @@ def main():
             return 2
         return subprocess.call(["bash", FOCUS, "focus", row["sid"]],
                                stdout=subprocess.DEVNULL)
+
+    if cmd == "watch":
+        # Repaints in place rather than scrolling, so it can be left open in a
+        # split without turning into a log. The sweep runs each pass, so a
+        # session that dies disappears rather than lingering.
+        try:
+            sys.stdout.write("\033[?25l")          # hide cursor
+            while True:
+                sys.stdout.write("\033[H\033[2J")  # home, clear
+                board(collect())
+                sys.stdout.flush()
+                time.sleep(3)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            sys.stdout.write("\033[?25h")          # restore cursor
+            sys.stdout.flush()
+        return 0
 
     if cmd in ("ls", "board"):
         board(rows)

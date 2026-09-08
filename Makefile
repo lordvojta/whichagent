@@ -37,7 +37,7 @@ $(BIN)/agenthud: $(SRC)/agenthud.m | $(BIN)
 
 # The menu bar item. Accessory activation policy, so no Dock tile.
 $(BIN)/agentbar: $(SRC)/agentbar.m | $(BIN)
-	$(CC) $(CFLAGS) -o $@ $< -framework Cocoa
+	$(CC) $(CFLAGS) -o $@ $< -framework Cocoa -framework Carbon
 	@echo "built agentbar"
 
 # Optional: real Notification Center banners. Needs a bundle, must be signed

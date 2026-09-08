@@ -13,6 +13,10 @@
 //   agentbar        run in the foreground (launchd or `&`)
 
 #import <Cocoa/Cocoa.h>
+#import <Carbon/Carbon.h>
+
+// Show the age alongside the count only once it is interesting.
+static const NSTimeInterval kAgeThreshold = 300;   // 5 minutes
 
 static NSString *StateDir(void) {
     NSString *env = NSProcessInfo.processInfo.environment[@"AGENT_STATE_DIR"];
@@ -38,7 +42,32 @@ static BOOL ReasonBlocks(NSString *r) {
 @property (nonatomic, strong) NSStatusItem *item;
 @property (nonatomic, strong) NSTimer *timer;
 @property (nonatomic, strong) NSArray *rows;
+- (void)openMenu;
 @end
+
+static Bar *gBar = nil;
+
+// Carbon rather than a Hammerspoon binding, for two reasons: it keeps the
+// hotkey in the same process as the thing it opens, so there is no second file
+// to install and keep in sync, and RegisterEventHotKey takes a VIRTUAL KEYCODE,
+// which is a physical key position. Binding by character would land on whatever
+// the active layout produces there, which on a Czech layout is not the letter
+// you typed.
+static OSStatus HotKeyFired(EventHandlerCallRef ref, EventRef evt, void *ctx) {
+    (void)ref; (void)evt; (void)ctx;
+    [gBar openMenu];
+    return noErr;
+}
+
+static void InstallHotKey(void) {
+    // cmd+ctrl+W. Option is deliberately avoided: on British and Czech layouts
+    // it is a dead-key modifier. cmd+ctrl matches the other bindings here.
+    EventHotKeyID hkid = { .signature = 'wagt', .id = 1 };
+    EventTypeSpec spec = { .eventClass = kEventClassKeyboard, .eventKind = kEventHotKeyPressed };
+    InstallApplicationEventHandler(&HotKeyFired, 1, &spec, NULL, NULL);
+    EventHotKeyRef ref;
+    RegisterEventHotKey(kVK_ANSI_W, cmdKey | controlKey, hkid, GetApplicationEventTarget(), 0, &ref);
+}
 
 @implementation Bar
 
@@ -52,6 +81,9 @@ static BOOL ReasonBlocks(NSString *r) {
     menu.delegate = self;                 // rebuilt on open, never on a timer
     self.item.menu = menu;
 
+    gBar = self;
+    InstallHotKey();
+
     [self refresh];
     // 4s is under the threshold where a stale badge feels wrong, and the work
     // is a directory listing, not a process launch.
@@ -61,12 +93,18 @@ static BOOL ReasonBlocks(NSString *r) {
     return self;
 }
 
-/** Count blocking sessions by reading the state files directly. */
-- (NSInteger)blockingCount {
+/** Count blocking sessions, and how long the most neglected has waited.
+ *
+ * Read natively rather than by shelling out to the CLI, because this runs on a
+ * timer for the life of the login session and a python launch every few seconds
+ * is a poor trade for logic this small.
+ */
+- (void)scanCount:(NSInteger *)outCount oldest:(NSTimeInterval *)outOldest {
     NSString *dir = StateDir();
     NSArray<NSString *> *names =
         [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:nil];
     NSInteger n = 0;
+    NSTimeInterval oldest = 0, now = NSDate.date.timeIntervalSince1970;
 
     for (NSString *name in names) {
         if ([name hasPrefix:@"."]) continue;
@@ -76,6 +114,7 @@ static BOOL ReasonBlocks(NSString *r) {
         if (!body) continue;
 
         NSString *state = nil, *reason = nil;
+        NSTimeInterval since = now;
         for (NSString *line in [body componentsSeparatedByString:@"\n"]) {
             NSRange eq = [line rangeOfString:@"="];
             if (eq.location == NSNotFound) continue;
@@ -83,14 +122,28 @@ static BOOL ReasonBlocks(NSString *r) {
             NSString *v = [line substringFromIndex:eq.location + 1];
             if ([k isEqualToString:@"STATE"])  state = v;
             if ([k isEqualToString:@"REASON"]) reason = v;
+            if ([k isEqualToString:@"SINCE"])  since = v.doubleValue;
         }
-        if ([state isEqualToString:@"waiting"] && reason && ReasonBlocks(reason)) n++;
+        if ([state isEqualToString:@"waiting"] && reason && ReasonBlocks(reason)) {
+            n++;
+            oldest = MAX(oldest, now - since);
+        }
     }
-    return n;
+    if (outCount)  *outCount = n;
+    if (outOldest) *outOldest = oldest;
+}
+
+static NSString *ShortAge(NSTimeInterval s) {
+    if (s < 60)   return [NSString stringWithFormat:@"%.0fs", s];
+    if (s < 3600) return [NSString stringWithFormat:@"%.0fm", s / 60];
+    return [NSString stringWithFormat:@"%.0fh", s / 3600];
 }
 
 - (void)refresh {
-    NSInteger n = [self blockingCount];
+    NSInteger n = 0;
+    NSTimeInterval oldest = 0;
+    [self scanCount:&n oldest:&oldest];
+
     NSStatusBarButton *b = self.item.button;
 
     // Filled and titled when something wants you; hollow and untitled when
@@ -103,10 +156,23 @@ static BOOL ReasonBlocks(NSString *r) {
     img.template = YES;
     b.image = img;
     b.imagePosition = n > 0 ? NSImageLeft : NSImageOnly;
-    b.title = n > 0 ? [NSString stringWithFormat:@" %ld", (long)n] : @"";
     b.alphaValue = n > 0 ? 1.0 : 0.55;
+
+    // Past a few minutes the count alone stops being the useful number. Two
+    // agents waiting is routine; one waiting twenty minutes is something you
+    // have forgotten. Showing the age only once it is interesting keeps the
+    // resting badge to a single digit.
+    if (n > 0 && oldest >= kAgeThreshold) {
+        b.title = [NSString stringWithFormat:@" %ld · %@", (long)n, ShortAge(oldest)];
+    } else if (n > 0) {
+        b.title = [NSString stringWithFormat:@" %ld", (long)n];
+    } else {
+        b.title = @"";
+    }
+
     b.toolTip = n > 0
-        ? [NSString stringWithFormat:@"%ld agent%@ waiting on you", (long)n, n == 1 ? @"" : @"s"]
+        ? [NSString stringWithFormat:@"%ld agent%@ waiting on you, longest %@",
+             (long)n, n == 1 ? @"" : @"s", ShortAge(oldest)]
         : @"no agents waiting";
 }
 
@@ -181,6 +247,11 @@ static BOOL ReasonBlocks(NSString *r) {
                                            keyEquivalent:@"q"];
     quit.target = NSApp;
     [menu addItem:quit];
+}
+
+/** Pop the menu open from the keyboard, as though it had been clicked. */
+- (void)openMenu {
+    [self.item.button performClick:nil];
 }
 
 - (void)jump:(NSMenuItem *)sender {

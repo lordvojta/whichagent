@@ -59,7 +59,11 @@ block progress, never the idle ones, so the number stays worth reading.
    5 ▸ acme-3d    working
 ```
 
-Same thing in the terminal with `whichagent`, and `whichagent focus 2` to jump.
+Same thing in the terminal with `whichagent`, `whichagent watch` to leave it
+running in a split, and `whichagent focus 2` to jump.
+
+Past five minutes the badge shows the age of the most neglected one, so `2 · 14m`
+reads differently from `2`.
 
 **A key that takes you back.**
 
@@ -68,6 +72,7 @@ Same thing in the terminal with `whichagent`, and `whichagent focus 2` to jump.
 | `⌘⌃↩` | jump to the session that asked |
 | `⌘⌃1`…`5` | jump to a specific banner |
 | `⌘⌃⌫` | dismiss all banners |
+| `⌘⌃W` | open the board from the menu bar |
 
 ## Configure
 
