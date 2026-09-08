@@ -1,14 +1,16 @@
-# agentcue
+# whichagent
 
-Know which coding agent wants you, what it wants, and get back to it in one keystroke.
+**Which agent wants me, what does it want, and take me back to it.**
 
-When you run more than a couple of agent sessions at once, "something finished" stops
-being useful information. agentcue answers the two questions that actually matter:
-**which project**, and **what happened** — with a sound you can identify without
-looking, a banner you can read at a glance, and a shortcut that puts you back in the
-exact terminal that asked.
+Sound and desktop notifications for Claude Code, Codex, opencode and Warp. Plus the
+part nobody else does: one keystroke returns you to the *exact terminal session* that
+asked, including the right integrated terminal inside VS Code.
 
-macOS only. Claude Code, Codex, opencode and Warp.
+Once you run more than a couple of agents at once, "something finished" stops being
+useful. Every tool in this space will play you a sound. The question you actually have
+is *which one*, and then: *where was it?*
+
+macOS. MIT.
 
 ## What it does
 
@@ -29,8 +31,8 @@ right integrated terminal inside VS Code, not just the right window.
 Needs the Xcode Command Line Tools (`xcode-select --install`). Nothing else.
 
 ```sh
-git clone https://github.com/YOUR-USER/agentcue
-cd agentcue
+git clone https://github.com/YOUR-USER/whichagent
+cd whichagent
 make
 ./install.sh
 ```
@@ -66,7 +68,7 @@ never steals focus mid-keystroke.
 **Focusing a VS Code terminal** works by a join key that already existed on both sides:
 VS Code exposes `Terminal.processId`, a pid resolves to a tty via `ps`, and the session
 registry already records each session's ttys. The bundled extension closes the loop.
-The Claude Code extension's own `vscode://` handler cannot do this — it only reveals
+The Claude Code extension's own `vscode://` handler cannot do this: it only reveals
 sessions in its panel map, and terminal sessions are never in it.
 
 ## Configuration

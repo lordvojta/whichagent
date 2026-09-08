@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentcue installer.
+# whichagent installer.
 #
 # Merges into an existing setup rather than replacing it. Claude Code users
 # routinely already have hooks in settings.json, and clobbering those would be

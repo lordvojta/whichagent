@@ -1,4 +1,4 @@
-# agentcue - build the three native helpers.
+# whichagent - build the three native helpers.
 #
 # No Xcode project and no signing: clang from the Command Line Tools is enough,
 # which is why this ships as build-from-source. A downloaded, unsigned Mach-O
@@ -43,7 +43,7 @@ $(APPBIN): $(SRC)/agentnotify.m | $(BIN)
 	  '<?xml version="1.0" encoding="UTF-8"?>' \
 	  '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
 	  '<plist version="1.0"><dict>' \
-	  '  <key>CFBundleIdentifier</key><string>dev.agentcue.notify</string>' \
+	  '  <key>CFBundleIdentifier</key><string>dev.whichagent.notify</string>' \
 	  '  <key>CFBundleName</key><string>AgentNotify</string>' \
 	  '  <key>CFBundleExecutable</key><string>agentnotify</string>' \
 	  '  <key>CFBundlePackageType</key><string>APPL</string>' \

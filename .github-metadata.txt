@@ -1,0 +1,14 @@
+DESCRIPTION (GitHub weights this heavily in search; paste into the repo About box):
+Know which coding agent needs you and jump straight back to its terminal. Sound +
+desktop notifications and one-keystroke session focus for Claude Code, Codex, opencode
+and Warp. macOS.
+
+TOPICS (add all of these in the About box; the main organic discovery lever):
+claude-code  claude  claude-code-hooks  anthropic  codex  opencode  warp-terminal
+ai-agents  coding-agent  agentic-coding  developer-tools  notifications
+desktop-notifications  macos  hammerspoon  vscode-extension  productivity  cli  hooks
+
+WHERE TO SUBMIT (these drive more traffic than the repo name):
+  https://github.com/pascalporedda/awesome-claude-code
+  https://github.com/varun86/awesome-claude-code-sounds
+  r/ClaudeAI, Hacker News Show HN
