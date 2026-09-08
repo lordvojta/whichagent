@@ -62,6 +62,19 @@ block progress, never the idle ones, so the number stays worth reading.
 Same thing in the terminal with `whichagent`, `whichagent watch` to leave it
 running in a split, and `whichagent focus 2` to jump.
 
+**And what they are actually doing.** `whichagent dash` reads the tail of each
+session's transcript and shows it in the agent's own words, so the question
+stops being "is something waiting" and becomes "what is going on".
+
+```
+  4 need you   27 agents active
+
+  ● acme-api   release-2     2m  Full API suite verdict: 4 failed, 3299 passed…
+  ● acme-shop  main         25m  Everything is ready. Here is the runbook.
+  ▸ acme-web   main          0s  Re-reading my added lines for style slips…
+  ▸ acme-site  feat/search  18s  Seven agents running. Taking the panel UI…
+```
+
 Past five minutes the badge shows the age of the most neglected one, so `2 · 14m`
 reads differently from `2`.
 

@@ -6,6 +6,8 @@
     whichagent json       machine readable
     whichagent focus <n>  jump to the nth row
     whichagent watch      the board, refreshing in place
+    whichagent dash       what every agent is actually doing, live
+    whichagent dash --once  one snapshot and exit
 
 Joins two directories that are deliberately kept apart:
 
@@ -17,8 +19,10 @@ as a session record, so a sibling state file there would appear as a phantom
 session in the focus fallback.
 """
 
+import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -124,6 +128,123 @@ def collect():
     return sorted(rows, key=key)
 
 
+PROJECTS = os.environ.get("CLAUDE_PROJECTS_DIR", f"{HOME}/.claude/projects")
+
+# Only the end of a transcript is ever read. "What is it doing right now" lives
+# at the tail by definition, and these files reach several MB: reading them
+# whole would turn a 0.15s scan of fifty sessions into tens of seconds.
+TAIL_BYTES = 200_000
+
+# A session whose transcript was written this recently is demonstrably working,
+# whatever the state file says. `waiting` is only cleared by UserPromptSubmit,
+# so an agent that resumes for any other reason (permission granted inline, a
+# loop continuing, a subagent returning) stays flagged as stuck forever. Recent
+# output is proof it is not.
+FRESH = 45
+
+
+def activity(window=3600):
+    """What each live session is doing, from the tail of its transcript."""
+    now = time.time()
+    out = {}
+    for path in glob.glob(f"{PROJECTS}/**/*.jsonl", recursive=True):
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        if now - st.st_mtime > window:
+            continue
+        try:
+            with open(path, "rb") as f:
+                if st.st_size > TAIL_BYTES:
+                    f.seek(-TAIL_BYTES, os.SEEK_END)
+                    f.readline()           # discard the partial line seek landed in
+                chunk = f.read().decode("utf-8", "replace")
+        except OSError:
+            continue
+
+        sid = os.path.basename(path)[:-6]
+        rec = {"sid": sid, "idle": now - st.st_mtime, "cwd": "", "branch": "",
+               "text": "", "tools": [], "sidechain": False}
+        for line in chunk.splitlines():
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            rec["cwd"] = d.get("cwd") or rec["cwd"]
+            rec["branch"] = d.get("gitBranch") or rec["branch"]
+            if d.get("isSidechain"):
+                rec["sidechain"] = True
+            m = d.get("message") or {}
+            for c in (m.get("content") or []):
+                if not isinstance(c, dict):
+                    continue
+                if c.get("type") == "tool_use":
+                    rec["tools"].append(c.get("name") or "?")
+                elif c.get("type") == "text" and c.get("text", "").strip():
+                    # First line only: the rest is usually a long explanation,
+                    # and the opening sentence is what reads as a status.
+                    rec["text"] = c["text"].strip().split("\n")[0]
+        out[sid] = rec
+    return out
+
+
+def dash(window=3600):
+    """Situational view: what is happening, and what is stuck."""
+    acts = activity(window)
+    states = {r["sid"]: r for r in collect()}
+
+    rows = []
+    for sid, a in acts.items():
+        # Subagents are not sessions you can go back to, and they would triple
+        # the row count on any session running agents in parallel.
+        if a["sidechain"]:
+            continue
+        st = states.get(sid, {})
+        blocking = st.get("blocking", False)
+        state = st.get("state", "")
+        if blocking and a["idle"] < FRESH:
+            blocking, state = False, "working"
+        rows.append({**a,
+                     "project": os.path.basename(a["cwd"] or "") or "?",
+                     "state": state,
+                     "reason": st.get("reason", ""),
+                     "blocking": blocking,
+                     "since": st.get("since", 0)})
+
+    # Stuck first, then most recently active: the top of the screen is for
+    # things wanting attention, not for whatever happened to tick last.
+    rows.sort(key=lambda r: (0 if r["blocking"] else 1, r["idle"]))
+
+    cols = shutil.get_terminal_size((150, 40)).columns
+    blocking = sum(1 for r in rows if r["blocking"])
+    head = f"{blocking} need you" if blocking else "nothing waiting"
+    print(f"\n  {C['bold']}{head}{C['off']}"
+          f"{C['dim']}   {len(rows)} agents active{C['off']}\n")
+
+    pw = min(max((len(r["project"]) for r in rows), default=7), 16)
+    bw = min(max((len(r["branch"]) for r in rows), default=6), 20)
+    used = 2 + 2 + pw + 2 + bw + 2 + 5 + 2
+    tw = max(20, cols - used - 2)
+
+    for r in rows:
+        if r["blocking"]:
+            mark, colour = "●", ("red" if r["reason"] == "permission" else "blue")
+        elif r["state"] == "waiting":
+            mark, colour = "○", "grey"
+        else:
+            mark, colour = "▸", "green"
+        idle = ago(r["idle"])
+        text = r["text"] or (" → ".join(r["tools"][-2:]) if r["tools"] else "")
+        if len(text) > tw:
+            text = text[: tw - 1] + "…"
+        print(f"  {C[colour]}{mark}{C['off']} "
+              f"{r['project'][:pw]:<{pw}}  "
+              f"{C['dim']}{r['branch'][:bw]:<{bw}}{C['off']}  "
+              f"{C['dim']}{idle:>5}{C['off']}  {text}")
+    print()
+
+
 LABEL = {
     "permission": ("needs permission", "red"),
     "plan": ("plan ready", "blue"),
@@ -194,6 +315,25 @@ def main():
             pass
         finally:
             sys.stdout.write("\033[?25h")          # restore cursor
+            sys.stdout.flush()
+        return 0
+
+    if cmd == "dash":
+        once = "--once" in sys.argv
+        if once:
+            dash()
+            return 0
+        try:
+            sys.stdout.write("\033[?25l")
+            while True:
+                sys.stdout.write("\033[H\033[2J")
+                dash()
+                sys.stdout.flush()
+                time.sleep(3)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            sys.stdout.write("\033[?25h")
             sys.stdout.flush()
         return 0
 
