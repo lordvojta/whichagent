@@ -3,6 +3,11 @@
 # localised instead of guessed at.
 #
 #   ~/.claude/hooks/soundcheck.sh
+
+# Everything this script shows is a test. Marked by construction so a demo
+# banner can never be mistaken for a real session firing.
+export AGENT_NOTIFY_TEST=1
+
 SOUNDS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../sounds" && pwd)"
 S="${TMPDIR:-/tmp}/agent-sound"
 

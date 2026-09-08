@@ -176,7 +176,7 @@ fi
 #    click to focus, and it never steals keyboard focus.
 HUD="$DIR/../sounds/agenthud"
 if [ -x "$HUD" ]; then
-  nohup "$HUD" "$TITLE" "$SUBTITLE" "$MESSAGE" "${ICON:-}" "${FOCUSCMD:-}" 5 "$EVENT" "$PROVIDER" \
+  nohup "$HUD" "$TITLE" "$SUBTITLE" "$MESSAGE" "${ICON:-}" "${FOCUSCMD:-}" 5 "$EVENT" "$PROVIDER" "$ROOT" \
     >/dev/null 2>&1 &
   exit 0
 fi

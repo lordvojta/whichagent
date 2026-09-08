@@ -12,8 +12,13 @@
 # process gets auto-denied and macOS *persists* that denial, after which every
 # later attempt fails silently, including from a normal terminal. tccutil only
 # works from an unrestricted session, which is why this script exists.
+
+# Everything this script shows is a test. Marked by construction so a demo
+# banner can never be mistaken for a real session firing.
+export AGENT_NOTIFY_TEST=1
+
 echo "resetting notification permission records..."
-for bid in fr.julienxx.oss.terminal-notifier dev.agentcue.notify; do
+for bid in fr.julienxx.oss.terminal-notifier cz.example.agentnotify; do
   printf '  %-42s ' "$bid"
   if tccutil reset UserNotification "$bid" >/dev/null 2>&1; then
     echo "reset"

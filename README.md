@@ -84,6 +84,8 @@ optional; the defaults are the intended experience.
 | `AGENT_FOCUS_DEFAULT` | `vscode` | Where to go when a session's host is unknown |
 | `AGENT_SOUND_PAUSE_MUSIC` | `0` | Pause Spotify/Music while a cue plays |
 | `AGENT_NOTIFY_DISABLE` | `0` | Sound only, no banner |
+| `AGENT_NOTIFY_TEST` | `0` | Force the TEST icon and title prefix |
+| `AGENT_HUD_HINT_TEXT` | keybind hint | Override the hint line |
 
 `AGENT_HUD_SCALE` is the knob people reach for to make banners smaller, and it is
 usually the wrong one: font size derives from it, so shrinking the box shrinks the text

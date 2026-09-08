@@ -109,7 +109,8 @@ static HudManager *gMgr = nil;
                         click:(NSString *)click
                       seconds:(double)secs
                         event:(NSString *)event
-                     provider:(NSString *)provider;
+                     provider:(NSString *)provider
+                     ringSeed:(NSString *)ringSeed;
 - (void)dismiss;
 - (void)activateClick;
 - (void)setIndex:(NSInteger)n visible:(BOOL)visible;
@@ -154,6 +155,32 @@ static NSImage *EventSymbol(NSString *event, NSColor **tint) {
     return img;
 }
 
+// Ring colour identifies the REPO, not the event.
+//
+// Two of his projects have near identical artwork: white line art on dark
+// maroon, measured 8/18/18 apart in RGB at banner size. Correct icon resolution
+// cannot fix that, because the artwork really is nearly the same picture. Event
+// does not lose anything by giving up the ring: it is already carried by the
+// badge's SHAPE (the colour-blind-safe channel) and by the badge's own tint.
+// Repo previously had no visual channel at all, only the title text, and the
+// eye reaches the icon first.
+//
+// Hues are quantised to fixed slots rather than taken raw from the hash. A raw
+// hash put the closest pair of his repos 0.015 apart on the wheel, which is the
+// same colour to a human. Quantising means two repos are either clearly
+// different or exactly equal, never confusingly close. A second saturation
+// level doubles the buckets. Collisions are possible and are no worse than the
+// current state, where every repo shares one ring.
+static NSColor *RepoRingColor(NSString *seed) {
+    uint32_t h = 2166136261u;
+    const char *p = seed.UTF8String ?: "";
+    while (*p) { h ^= (unsigned char)(*p++); h *= 16777619u; }
+    const uint32_t slots = 12;
+    CGFloat hue = (CGFloat)(h % slots) / (CGFloat)slots;
+    CGFloat sat = ((h / slots) & 1u) ? 0.78 : 0.55;
+    return [NSColor colorWithHue:hue saturation:sat brightness:0.95 alpha:1.0];
+}
+
 static NSTextField *Label(NSString *s, CGFloat size, NSColor *c, BOOL bold) {
     NSTextField *f = [[NSTextField alloc] initWithFrame:NSZeroRect];
     f.stringValue = s ?: @"";
@@ -175,7 +202,8 @@ static NSTextField *Label(NSString *s, CGFloat size, NSColor *c, BOOL bold) {
                         click:(NSString *)click
                       seconds:(double)secs
                         event:(NSString *)event
-                     provider:(NSString *)provider {
+                     provider:(NSString *)provider
+                     ringSeed:(NSString *)ringSeed {
     if (!(self = [super init])) return nil;
     self.click = click;
     self.provider = provider.length ? provider : @"claude";
@@ -256,7 +284,8 @@ static NSTextField *Label(NSString *s, CGFloat size, NSColor *c, BOOL bold) {
             // a single coloured edge on a tile is a banned pattern here, and a
             // ring also survives at small scales where a glyph would not.
             iv.layer.borderWidth = MAX(1.0, 1.5 * s);
-            iv.layer.borderColor = [tint colorWithAlphaComponent:0.95].CGColor;
+            iv.layer.borderColor =
+                [RepoRingColor(ringSeed.length ? ringSeed : title) colorWithAlphaComponent:0.95].CGColor;
             [hit addSubview:iv];
 
             // Badge, overhanging the icon corner so its size is not capped by
@@ -577,9 +606,29 @@ static void HandleLine(NSString *line) {
     if (ev.length == 0) ev = @"done";
     NSString *pv = f.count > 7 ? Unescape(f[7]) : @"claude";
     if (pv.length == 0) pv = @"claude";
-    HudItem *item = [[HudItem alloc] initWithTitle:at(0) subtitle:at(1) body:at(2)
-                                             image:at(3) click:at(4) seconds:secs
-                                             event:ev provider:pv];
+
+    // Test banners are marked here, at the only point that draws, rather than
+    // by convention at each call site. Convention is exactly what failed: both
+    // of us spent an evening firing demo banners carrying real project icons
+    // and real repo names, and he reasonably concluded a project was notifying
+    // him when nothing was running. A rule you have to remember is not a rule.
+    NSString *title = at(0);
+    NSString *img = at(3);
+    if (f.count > 8 && [Unescape(f[8]) isEqualToString:@"1"]) {
+        NSString *asset = [NSHomeDirectory() stringByAppendingPathComponent:
+                              @".claude/sounds/assets/test-icon.png"];
+        // Degrade to the real icon if the asset is missing, never to no icon.
+        if ([[NSFileManager defaultManager] fileExistsAtPath:asset]) img = asset;
+        // Title too: the icon alone does not survive if artwork is ever off.
+        title = [@"TEST  " stringByAppendingString:title];
+    }
+
+    // Repo path when the caller knows it, so two checkouts with the same
+    // basename still differ. Falls back to the title.
+    NSString *seed = f.count > 9 ? Unescape(f[9]) : @"";
+    HudItem *item = [[HudItem alloc] initWithTitle:title subtitle:at(1) body:at(2)
+                                             image:img click:at(4) seconds:secs
+                                             event:ev provider:pv ringSeed:seed];
     [gMgr add:item];
 }
 
@@ -686,7 +735,7 @@ int main(int argc, const char *argv[]) {
         }
 
         if (argc < 2) {
-            fprintf(stderr, "usage: agenthud <title> [subtitle] [body] [image] [click] [secs] [event] [provider]\n"
+            fprintf(stderr, "usage: agenthud <title> [subtitle] [body] [image] [click] [secs] [event] [provider] [repo]\n"
                             "       agenthud --daemon | --stop\n");
             return 2;
         }
@@ -695,6 +744,12 @@ int main(int argc, const char *argv[]) {
         for (int i = 1; i <= 8; i++) {
             [parts addObject:Escape(i < argc ? @(argv[i]) : @"")];
         }
+        // The daemon is long lived, so its own environment is stale and cannot
+        // be consulted. The flag has to travel with the message.
+        const char *t = getenv("AGENT_NOTIFY_TEST");
+        [parts addObject:(t && *t && strcmp(t, "0") != 0) ? @"1" : @"0"];
+        // argv 9, the repo path, seeds the ring colour.
+        [parts addObject:Escape(argc > 9 ? @(argv[9]) : @"")];
         NSString *line = [[parts componentsJoinedByString:@"\t"] stringByAppendingString:@"\n"];
 
         // Start the owner on demand, then hand the banner over. Two banners

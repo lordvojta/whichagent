@@ -5,6 +5,11 @@
 #   agent-demo.sh          the full walkthrough
 #   agent-demo.sh quick    one banner and one hit
 
+
+# Everything this script shows is a test. Marked by construction so a demo
+# banner can never be mistaken for a real session firing.
+export AGENT_NOTIFY_TEST=1
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOUNDS="$DIR/../sounds"
 HUD="$SOUNDS/agenthud"
