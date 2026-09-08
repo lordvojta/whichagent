@@ -51,7 +51,8 @@ if [ "$UNINSTALL" = 1 ]; then
            notify-test.sh warp-sound.zsh; do
     [ -e "$HOOKS/$f" ] && run rm -f "$HOOKS/$f"
   done
-  run rm -f "$SOUNDS/agenthud" "$SOUNDS/hitplay"
+  run rm -f "$SOUNDS/agenthud" "$SOUNDS/hitplay" "$SOUNDS/agentbar"
+  run rm -rf "$HOME/.claude/cache/agent-state"
   if [ -f "$SETTINGS" ]; then
     run cp "$SETTINGS" "$SETTINGS.bak-$(date +%Y%m%d-%H%M%S)"
     if [ "$DRY" = 0 ]; then
@@ -64,7 +65,8 @@ for event in list(hooks):
     kept = []
     for group in hooks[event]:
         subs = [h for h in group.get("hooks", [])
-                if "agent-sound.sh" not in json.dumps(h)]
+                if "agent-sound.sh" not in json.dumps(h)
+                and "agent-state.sh" not in json.dumps(h)]
         if subs:
             group["hooks"] = subs
             kept.append(group)
@@ -95,7 +97,8 @@ for f in "$REPO"/hooks/*; do
 done
 say "installed $n hooks"
 
-run cp "$REPO/bin/agenthud" "$REPO/bin/hitplay" "$SOUNDS/"
+run cp "$REPO/bin/agenthud" "$REPO/bin/hitplay" "$REPO/bin/agentbar" "$SOUNDS/"
+run cp "$REPO/whichagent" "$HOOKS/" && run chmod +x "$HOOKS/whichagent"
 [ -d "$REPO/bin/AgentNotify.app" ] && run cp -R "$REPO/bin/AgentNotify.app" "$SOUNDS/"
 for w in "$REPO"/sounds/*.wav; do run cp "$w" "$SOUNDS/"; done
 run cp "$REPO"/sounds/generate-*.py "$SOUNDS/" 2>/dev/null || true
@@ -129,11 +132,29 @@ script = os.path.join(hooks_dir, "agent-sound.sh")
 
 # event -> (matcher, argv). PreToolUse fires on ExitPlanMode only: that is the
 # moment a plan becomes reviewable, which is a different cue from "finished".
+state = os.path.join(hooks_dir, "agent-state.sh")
+
+# Notification carries 14 types, most of which are not "blocked on you":
+# auth_success, agent_completed, push_notification, and agent_needs_input
+# (which reports on a DIFFERENT session). Without this matcher the chime fires
+# on all of them.
+NOTIF = "permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog"
+
+# (key, event, matcher, command). The state writer is a separate entry rather
+# than folded into agent-sound.sh: that script has a suppression window that
+# swallows a `done` following a `plan`, which is right for chimes and wrong for
+# state, where a swallowed event is a lost transition.
 WANT = {
-    "Stop":         (None,           f'"{script}" done'),
-    "Notification": (None,           f'"{script}" input'),
-    "SessionStart": (None,           f'"{script}" warm'),
-    "PreToolUse":   ("ExitPlanMode", f'"{script}" plan'),
+    "sound-stop":   ("Stop",             None,            f'"{script}" done'),
+    "sound-notif":  ("Notification",     NOTIF,           f'"{script}" input'),
+    "sound-start":  ("SessionStart",     None,            f'"{script}" warm'),
+    "sound-plan":   ("PreToolUse",       "ExitPlanMode",  f'"{script}" plan'),
+    "state-stop":   ("Stop",             None,            f'"{state}"'),
+    "state-notif":  ("Notification",     None,            f'"{state}"'),
+    "state-start":  ("SessionStart",     None,            f'"{state}"'),
+    "state-plan":   ("PreToolUse",       "ExitPlanMode",  f'"{state}"'),
+    "state-prompt": ("UserPromptSubmit", None,            f'"{state}"'),
+    "state-end":    ("SessionEnd",       None,            f'"{state}"'),
 }
 
 with open(settings) as f:
@@ -142,14 +163,17 @@ with open(settings) as f:
 hooks = cfg.setdefault("hooks", {})
 
 added = kept = 0
-for event, (matcher, cmd) in WANT.items():
+for key, (event, matcher, cmd) in WANT.items():
     groups = hooks.setdefault(event, [])
-    # Idempotent: never add a second copy of our own hook, and never disturb
-    # anyone else's. Matching on the script name rather than the exact command
-    # so an upgrade that changes arguments still replaces rather than doubles.
+    marker = "agent-state.sh" if key.startswith("state") else "agent-sound.sh"
+    # Idempotent, and matched on script name plus matcher rather than the exact
+    # command, so an upgrade that changes arguments replaces rather than doubles.
+    # Sound and state coexist on the same event, hence the marker.
     for g in groups:
+        if g.get("matcher") != matcher:
+            continue
         for h in g.get("hooks", []):
-            if "agent-sound.sh" in json.dumps(h):
+            if marker in json.dumps(h):
                 h["command"] = cmd
                 kept += 1
                 break
@@ -157,7 +181,7 @@ for event, (matcher, cmd) in WANT.items():
             continue
         break
     else:
-        entry = {"hooks": [{"type": "command", "command": cmd}]}
+        entry = {"hooks": [{"type": "command", "command": cmd, "async": True}]}
         if matcher: entry["matcher"] = matcher
         groups.append(entry)
         added += 1

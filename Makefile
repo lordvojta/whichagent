@@ -14,7 +14,7 @@ APPBIN  := $(APPDIR)/Contents/MacOS/agentnotify
 
 .PHONY: all clean install check sounds
 
-all: $(BIN)/hitplay $(BIN)/agenthud $(APPBIN)
+all: $(BIN)/hitplay $(BIN)/agenthud $(BIN)/agentbar $(APPBIN)
 
 $(BIN):
 	@mkdir -p $(BIN)
@@ -34,6 +34,11 @@ $(BIN)/hitplay: $(SRC)/hitplay.m | $(BIN)
 $(BIN)/agenthud: $(SRC)/agenthud.m | $(BIN)
 	$(CC) $(CFLAGS) -o $@ $< -framework Cocoa -framework QuartzCore
 	@echo "built agenthud"
+
+# The menu bar item. Accessory activation policy, so no Dock tile.
+$(BIN)/agentbar: $(SRC)/agentbar.m | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $< -framework Cocoa
+	@echo "built agentbar"
 
 # Optional: real Notification Center banners. Needs a bundle, must be signed
 # (ad-hoc is fine) and registered with LaunchServices or macOS ignores it.
@@ -65,7 +70,8 @@ check: all
 	@bash -n hooks/*.sh && echo "shell syntax ok"
 	@python3 -m py_compile hooks/agent-icon.py && echo "python syntax ok"
 	@node --check integrations/vscode/extension.js && echo "js syntax ok"
-	@test -x $(BIN)/agenthud && test -x $(BIN)/hitplay && echo "binaries present"
+	@test -x $(BIN)/agenthud && test -x $(BIN)/hitplay && test -x $(BIN)/agentbar && echo "binaries present"
+	@python3 -m py_compile whichagent && echo "cli syntax ok"
 
 install: all
 	./install.sh

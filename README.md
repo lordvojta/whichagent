@@ -32,7 +32,7 @@ make
 It never touches hooks it did not add. `./install.sh --dry-run` shows you what it would
 do; `--uninstall` removes only its own entries.
 
-You compile the three helpers yourself, so macOS never asks you to trust an unsigned
+You compile the four helpers yourself, so macOS never asks you to trust an unsigned
 binary from the internet.
 
 ## What you get
@@ -44,6 +44,22 @@ different phrases, so you can keep typing and still know what happened.
 **A banner that says which project.** Bottom-right stack, each with the project's own
 icon, name, branch and path, a coloured ring per repo, and a badge for the event:
 green check finished, blue clipboard plan ready, orange question mark needs you.
+
+**A board of who is waiting.** A menu bar item showing how many agents are
+blocked on you, and a list you can jump from. It counts only sessions that
+block progress, never the idle ones, so the number stays worth reading.
+
+```
+  3 need you   21 sessions
+
+   1 ● acme-shop  needs permission  12m
+   2 ● acme-web   plan ready         3m
+   3 ● acme-api   waiting on you     1m
+   4 ○ acme-site  finished          20m
+   5 ▸ acme-3d    working
+```
+
+Same thing in the terminal with `whichagent`, and `whichagent focus 2` to jump.
 
 **A key that takes you back.**
 
@@ -67,6 +83,7 @@ Optional. Defaults are the intended experience. Edit `~/.claude/agent-sound.conf
 | `AGENT_FOCUS_DEFAULT` | `vscode` | where to go when a host is unknown |
 | `AGENT_SOUND_PAUSE_MUSIC` | `0` | pause Spotify/Music while a cue plays |
 | `AGENT_NOTIFY_DISABLE` | `0` | sound only, no banner |
+| `AGENT_STATE_DIR` | `~/.claude/cache/agent-state` | where session state is kept |
 
 To make banners smaller, reduce `AGENT_HUD_HEIGHT`. Do not reach for
 `AGENT_HUD_SCALE`: font size derives from it, so it shrinks the text too.
@@ -94,6 +111,20 @@ Two long-lived daemons rather than a process per event.
 stack, so gaps and overlaps were unavoidable until one process owned the layout. The
 banner is a self-drawn `NSPanel`, not a Notification Center notification, so it needs no
 notification permission and never steals focus mid-keystroke.
+
+**State is tracked, not just events.** Each session records whether it is
+working or waiting, why, and since when. `Stop` means waiting: a finished turn
+is a session that will not move until you say something. `UserPromptSubmit`
+clears it, gated on `source == "user"` so a `/loop` wakeup or a scheduled fire
+does not falsely count as you answering. `Notification` is filtered hard: it
+carries 14 types and most, including `agent_completed` and `agent_needs_input`
+(which reports on a *different* session), do not mean this one is blocked.
+
+Liveness is decided in exactly one place, by a sweep keyed on the session's
+tty. A session id appears in no process's arguments, so the obvious check
+(`pgrep -f "$session_id"`) matches nothing and would mark every session dead.
+The board and the menu bar both simply list what survives the sweep, so they
+cannot disagree about what is running.
 
 Focusing a specific VS Code terminal uses a join key that already existed on both sides:
 VS Code exposes `Terminal.processId`, a pid resolves to a tty via `ps`, and the session

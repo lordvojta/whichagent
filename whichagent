@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""whichagent: what are my agents doing, and which ones want me.
+
+    whichagent            the board
+    whichagent count      how many need action, for the menu bar
+    whichagent json       machine readable
+    whichagent focus <n>  jump to the nth row
+
+Joins two directories that are deliberately kept apart:
+
+  ~/.claude/cache/agent-sessions   where a session lives (tty, host, cwd)
+  ~/.claude/cache/agent-state      what a session is doing (state, reason, since)
+
+They are separate because agent-focus.sh treats every file in its own directory
+as a session record, so a sibling state file there would appear as a phantom
+session in the focus fallback.
+"""
+
+import json
+import os
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+SESSIONS = os.environ.get("AGENT_SESSION_DIR", f"{HOME}/.claude/cache/agent-sessions")
+STATE = os.environ.get("AGENT_STATE_DIR", f"{HOME}/.claude/cache/agent-state")
+FOCUS = f"{HOME}/.claude/hooks/agent-focus.sh"
+
+# Only these block progress. A finished turn is waiting too, but it is not
+# stopping you, and counting it would make the badge read 20-odd, which is
+# wallpaper rather than information.
+BLOCKING = ("plan", "permission", "idle")
+
+C = {
+    "dim": "\033[2m", "bold": "\033[1m", "off": "\033[0m",
+    "red": "\033[38;5;203m", "amber": "\033[38;5;215m",
+    "blue": "\033[38;5;111m", "green": "\033[38;5;114m",
+    "grey": "\033[38;5;244m",
+}
+if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
+    C = {k: "" for k in C}
+
+
+def read_kv(path):
+    try:
+        with open(path) as f:
+            return dict(
+                line.rstrip("\n").split("=", 1)
+                for line in f
+                if "=" in line and not line.startswith("#")
+            )
+    except OSError:
+        return {}
+
+
+def sweep():
+    """Let agent-state.sh gc decide what is alive, then trust the directory.
+
+    Liveness is deliberately not re-implemented here. The menu bar counts files
+    in the same directory without any liveness logic of its own, so if this
+    filtered independently the badge and the board could disagree about what is
+    running. One authority, consulted before reading.
+    """
+    gc = os.path.join(HOME, ".claude", "hooks", "agent-state.sh")
+    if os.path.exists(gc):
+        try:
+            subprocess.run(["bash", gc, "gc"], timeout=10,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+
+def ago(seconds):
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m"
+    if s < 86400:
+        return f"{s // 3600}h{(s % 3600) // 60:02d}"
+    return f"{s // 86400}d"
+
+
+def collect():
+    sweep()
+    now = time.time()
+    rows = []
+    try:
+        names = os.listdir(STATE)
+    except OSError:
+        names = []
+
+    for sid in names:
+        if sid.startswith("."):
+            continue
+        st = read_kv(os.path.join(STATE, sid))
+        if not st:
+            continue
+        sess = read_kv(os.path.join(SESSIONS, sid))
+        cwd = sess.get("CWD") or st.get("CWD") or ""
+        state = st.get("STATE", "working")
+        reason = st.get("REASON", "")
+        rows.append(
+            {
+                "sid": sid,
+                "project": os.path.basename(cwd) or "(unknown)",
+                "cwd": cwd,
+                "state": state,
+                "reason": reason,
+                "since": now - float(st.get("SINCE") or now),
+                "host": sess.get("HOST", ""),
+                "blocking": state == "waiting" and reason in BLOCKING,
+            }
+        )
+
+    # Blocking first, then finished, then working. Oldest first inside each
+    # band: the one you have neglected longest is the one to surface.
+    def key(r):
+        band = 0 if r["blocking"] else (1 if r["state"] == "waiting" else 2)
+        return (band, -r["since"])
+
+    return sorted(rows, key=key)
+
+
+LABEL = {
+    "permission": ("needs permission", "red"),
+    "plan": ("plan ready", "blue"),
+    "idle": ("waiting on you", "amber"),
+    "finished": ("finished", "grey"),
+    "": ("working", "green"),
+}
+
+
+def board(rows):
+    if not rows:
+        print(f"\n  {C['dim']}no agent sessions{C['off']}\n")
+        return
+    blocking = sum(1 for r in rows if r["blocking"])
+    head = f"{blocking} need you" if blocking else "nothing waiting"
+    print(f"\n  {C['bold']}{head}{C['off']}"
+          f"{C['dim']}   {len(rows)} session{'s' if len(rows) != 1 else ''}{C['off']}\n")
+
+    width = max((len(r["project"]) for r in rows), default=10)
+    for i, r in enumerate(rows, 1):
+        text, colour = LABEL.get(r["reason"] if r["state"] == "waiting" else "",
+                                 ("working", "green"))
+        mark = "●" if r["blocking"] else ("○" if r["state"] == "waiting" else "▸")
+        age = ago(r["since"]) if r["state"] == "waiting" else ""
+        print(f"  {C['dim']}{i:>2}{C['off']} {C[colour]}{mark}{C['off']} "
+              f"{r['project']:<{width}}  {C[colour]}{text:<16}{C['off']}"
+              f"{C['dim']}{age:>5}{C['off']}")
+    print(f"\n  {C['dim']}whichagent focus <n> to jump{C['off']}\n")
+
+
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "ls"
+
+    if cmd == "count":
+        # Printed into a menu bar many times a minute, so it does the least
+        # work that answers the question and nothing else.
+        print(sum(1 for r in collect() if r["blocking"]))
+        return 0
+
+    rows = collect()
+
+    if cmd == "json":
+        print(json.dumps(rows, indent=2))
+        return 0
+
+    if cmd == "focus":
+        try:
+            n = int(sys.argv[2])
+            row = rows[n - 1]
+        except (IndexError, ValueError):
+            print("usage: whichagent focus <row number>", file=sys.stderr)
+            return 2
+        return subprocess.call(["bash", FOCUS, "focus", row["sid"]],
+                               stdout=subprocess.DEVNULL)
+
+    if cmd in ("ls", "board"):
+        board(rows)
+        return 0
+
+    print(__doc__.strip())
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
