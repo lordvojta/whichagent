@@ -46,9 +46,9 @@ say "binaries built"
 # ---------------------------------------------------------------- uninstall
 if [ "$UNINSTALL" = 1 ]; then
   head_ "uninstall"
-  for f in agent-sound.sh agent-notify.sh agent-focus.sh agent-icon.py \
-           session-tty.sh agent-sound-codex.sh agent-demo.sh soundcheck.sh \
-           notify-test.sh warp-sound.zsh; do
+  for f in agent-sound.sh agent-sound-notification.sh agent-notify.sh \
+           agent-focus.sh agent-icon.py session-tty.sh agent-sound-codex.sh \
+           agent-demo.sh soundcheck.sh notify-test.sh warp-sound.zsh; do
     [ -e "$HOOKS/$f" ] && run rm -f "$HOOKS/$f"
   done
   run rm -f "$SOUNDS/agenthud" "$SOUNDS/hitplay" "$SOUNDS/agentbar"
@@ -66,6 +66,7 @@ for event in list(hooks):
     for group in hooks[event]:
         subs = [h for h in group.get("hooks", [])
                 if "agent-sound.sh" not in json.dumps(h)
+                and "agent-sound-notification.sh" not in json.dumps(h)
                 and "agent-state.sh" not in json.dumps(h)]
         if subs:
             group["hooks"] = subs
@@ -124,37 +125,48 @@ else
 fi
 
 if [ "$DRY" = 0 ]; then
-  python3 - "$SETTINGS" "$HOOKS" <<'PY'
-import json, sys, os
+  python3 - "$SETTINGS" <<'PY'
+import json, sys
 
-settings, hooks_dir = sys.argv[1], sys.argv[2]
-script = os.path.join(hooks_dir, "agent-sound.sh")
+settings = sys.argv[1]
+
+# $HOME stays literal: the hook shell expands it, so settings.json carries no
+# machine-specific path.
+script = '"$HOME/.claude/hooks/agent-sound.sh"'
 
 # event -> (matcher, argv). PreToolUse fires on ExitPlanMode only: that is the
 # moment a plan becomes reviewable, which is a different cue from "finished".
-state = os.path.join(hooks_dir, "agent-state.sh")
+state = '"$HOME/.claude/hooks/agent-state.sh"'
+
+# Every command is silenced and forced to exit 0. A notification hook failing
+# must never surface as a hook error inside the agent session it reports on.
+QUIET = " >/dev/null 2>&1 || true"
 
 # Notification carries 14 types, most of which are not "blocked on you":
 # auth_success, agent_completed, push_notification, and agent_needs_input
 # (which reports on a DIFFERENT session). Without this matcher the chime fires
-# on all of them.
+# on all of them. The chime also goes through agent-sound-notification.sh,
+# which filters on the payload itself in case the matcher is not honoured.
 NOTIF = "permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog"
+notif = '"$HOME/.claude/hooks/agent-sound-notification.sh"'
 
 # (key, event, matcher, command). The state writer is a separate entry rather
 # than folded into agent-sound.sh: that script has a suppression window that
 # swallows a `done` following a `plan`, which is right for chimes and wrong for
 # state, where a swallowed event is a lost transition.
+# The provider is passed explicitly: these are Claude Code hooks, so there is
+# nothing to auto-detect and no reason to risk detecting it wrong.
 WANT = {
-    "sound-stop":   ("Stop",             None,            f'"{script}" done'),
-    "sound-notif":  ("Notification",     NOTIF,           f'"{script}" input'),
-    "sound-start":  ("SessionStart",     None,            f'"{script}" warm'),
-    "sound-plan":   ("PreToolUse",       "ExitPlanMode",  f'"{script}" plan'),
-    "state-stop":   ("Stop",             None,            f'"{state}"'),
-    "state-notif":  ("Notification",     None,            f'"{state}"'),
-    "state-start":  ("SessionStart",     None,            f'"{state}"'),
-    "state-plan":   ("PreToolUse",       "ExitPlanMode",  f'"{state}"'),
-    "state-prompt": ("UserPromptSubmit", None,            f'"{state}"'),
-    "state-end":    ("SessionEnd",       None,            f'"{state}"'),
+    "sound-stop":   ("Stop",             None,            f'{script} done claude{QUIET}'),
+    "sound-notif":  ("Notification",     NOTIF,           f'{notif}{QUIET}'),
+    "sound-start":  ("SessionStart",     None,            f'{script} warm claude{QUIET}'),
+    "sound-plan":   ("PreToolUse",       "ExitPlanMode",  f'{script} plan claude{QUIET}'),
+    "state-stop":   ("Stop",             None,            f'{state}{QUIET}'),
+    "state-notif":  ("Notification",     None,            f'{state}{QUIET}'),
+    "state-start":  ("SessionStart",     None,            f'{state}{QUIET}'),
+    "state-plan":   ("PreToolUse",       "ExitPlanMode",  f'{state}{QUIET}'),
+    "state-prompt": ("UserPromptSubmit", None,            f'{state}{QUIET}'),
+    "state-end":    ("SessionEnd",       None,            f'{state}{QUIET}'),
 }
 
 with open(settings) as f:
@@ -166,6 +178,10 @@ added = kept = 0
 for key, (event, matcher, cmd) in WANT.items():
     groups = hooks.setdefault(event, [])
     marker = "agent-state.sh" if key.startswith("state") else "agent-sound.sh"
+    # "agent-sound" matches both the filter wrapper and an older direct
+    # `agent-sound.sh input` entry, so an upgrade replaces rather than doubles.
+    if key == "sound-notif":
+        marker = "agent-sound"
     # Idempotent, and matched on script name plus matcher rather than the exact
     # command, so an upgrade that changes arguments replaces rather than doubles.
     # Sound and state coexist on the same event, hence the marker.
