@@ -64,6 +64,20 @@ case "$EVENT" in
   warm) exit 0 ;;   # device warm-up is not an event worth a banner
 esac
 
+# Banner only the events that are actually blocking you.
+#
+# Deliberately OFF by default. At 20+ concurrent sessions finishes dominate and
+# the argument for hiding them is good, but a finished banner with its own
+# symbol is a requested feature, so hiding it is opt-in rather than silent.
+# AGENT_NOTIFY_ONLY_BLOCKING=1 in agent-sound.conf turns it on. The chime is
+# unaffected either way: this suppresses the banner only. It has to sit below
+# the EVENT assignment; above it, EVENT is empty and nothing is ever filtered.
+if [ "${AGENT_NOTIFY_ONLY_BLOCKING:-0}" = "1" ]; then
+  case "$EVENT" in
+    done) exit 0 ;;
+  esac
+fi
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ------------------------------------------------------------------- repo
@@ -176,7 +190,22 @@ fi
 #    click to focus, and it never steals keyboard focus.
 HUD="$DIR/../sounds/agenthud"
 if [ -x "$HUD" ]; then
-  nohup "$HUD" "$TITLE" "$SUBTITLE" "$MESSAGE" "${ICON:-}" "${FOCUSCMD:-}" 5 "$EVENT" "$PROVIDER" "$ROOT" \
+  # Pin a repo's ring colour when the hash puts two projects too close.
+  # In agent-sound.conf:  AGENT_HUD_RING_ACME_WEB="#6df2af"
+  # Any future collision is one line here rather than a re-tune of the hashing.
+  RING=""
+  _rk="AGENT_HUD_RING_$(printf '%s' "$NAME" | tr '[:lower:]-' '[:upper:]_' | tr -cd '[:alnum:]_')"
+  eval "RING=\"\${$_rk:-}\""
+
+  # Blocking events persist until dismissed; a finish keeps its timeout.
+  # AGENT_NOTIFY_STICKY=0 turns this off.
+  HUD_SECS=5
+  if [ "${AGENT_NOTIFY_STICKY:-1}" != "0" ]; then
+    case "$EVENT" in
+      plan|input) HUD_SECS=-1 ;;
+    esac
+  fi
+  nohup "$HUD" "$TITLE" "$SUBTITLE" "$MESSAGE" "${ICON:-}" "${FOCUSCMD:-}" "$HUD_SECS" "$EVENT" "$PROVIDER" "$ROOT" "$RING" \
     >/dev/null 2>&1 &
   exit 0
 fi

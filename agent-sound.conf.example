@@ -24,3 +24,15 @@
 # AGENT_HUD_HEIGHT=64
 # AGENT_HUD_SCALE=1.0
 # AGENT_HUD_HINTS=0
+
+# Set to 1 to banner only events that block you (plan ready, needs input) and
+# skip "finished" banners. The chime still plays for every event.
+# AGENT_NOTIFY_ONLY_BLOCKING=1
+
+# Plan and input banners stay on screen until dismissed. Set to 0 to let them
+# time out like a finish does.
+# AGENT_NOTIFY_STICKY=0
+
+# Pin a repo's ring colour, overriding the hash. Use when two projects land on
+# similar rings. The key is the repo name uppercased, dashes become underscores.
+# AGENT_HUD_RING_ACME_WEB="#6df2af"

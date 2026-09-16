@@ -110,7 +110,8 @@ static HudManager *gMgr = nil;
                       seconds:(double)secs
                         event:(NSString *)event
                      provider:(NSString *)provider
-                     ringSeed:(NSString *)ringSeed;
+                     ringSeed:(NSString *)ringSeed
+                 ringOverride:(NSColor *)ringOverride;
 - (void)dismiss;
 - (void)activateClick;
 - (void)setIndex:(NSInteger)n visible:(BOOL)visible;
@@ -171,13 +172,42 @@ static NSImage *EventSymbol(NSString *event, NSColor **tint) {
 // different or exactly equal, never confusingly close. A second saturation
 // level doubles the buckets. Collisions are possible and are no worse than the
 // current state, where every repo shares one ring.
+// "#rrggbb" from config, so a colour can be pinned when the hash puts two
+// projects too close. Returns nil for anything unparseable.
+static NSColor *ParseHexColor(NSString *hex) {
+    NSString *t = [hex stringByTrimmingCharactersInSet:
+                      [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([t hasPrefix:@"#"]) t = [t substringFromIndex:1];
+    if (t.length != 6) return nil;
+    unsigned int v = 0;
+    if (![[NSScanner scannerWithString:t] scanHexInt:&v]) return nil;
+    return [NSColor colorWithRed:((v >> 16) & 0xFF) / 255.0
+                           green:((v >> 8) & 0xFF) / 255.0
+                            blue:(v & 0xFF) / 255.0
+                           alpha:1.0];
+}
+
 static NSColor *RepoRingColor(NSString *seed) {
     uint32_t h = 2166136261u;
     const char *p = seed.UTF8String ?: "";
     while (*p) { h ^= (unsigned char)(*p++); h *= 16777619u; }
-    const uint32_t slots = 12;
+    // 21 hues x 3 saturations, chosen by searching a real tree of 61 repos
+    // against two criteria at once rather than by picking a round number.
+    //
+    // 16x3 looked better on the aggregate (42 of 61 repos sharing a ring rather
+    // than 55) and was WORSE where it mattered: the two projects that were
+    // actually being confused both landed in slot 13 and differed only in
+    // saturation, two shades of magenta. Optimising the average broke the
+    // specific case. 21x3 puts that pair 0.476 apart, nearly opposite on the
+    // wheel, and still cuts sharing to 25 of 61.
+    //
+    // A hash can never GUARANTEE any given pair separates, which is why the
+    // explicit override exists: the next collision is one line of config, not
+    // another re-tune of these constants.
+    const uint32_t slots = 21, sats = 3;
     CGFloat hue = (CGFloat)(h % slots) / (CGFloat)slots;
-    CGFloat sat = ((h / slots) & 1u) ? 0.78 : 0.55;
+    const CGFloat satTable[3] = { 0.45, 0.68, 0.90 };
+    CGFloat sat = satTable[(h / slots) % sats];
     return [NSColor colorWithHue:hue saturation:sat brightness:0.95 alpha:1.0];
 }
 
@@ -203,7 +233,8 @@ static NSTextField *Label(NSString *s, CGFloat size, NSColor *c, BOOL bold) {
                       seconds:(double)secs
                         event:(NSString *)event
                      provider:(NSString *)provider
-                     ringSeed:(NSString *)ringSeed {
+                     ringSeed:(NSString *)ringSeed
+                 ringOverride:(NSColor *)ringOverride {
     if (!(self = [super init])) return nil;
     self.click = click;
     self.provider = provider.length ? provider : @"claude";
@@ -273,26 +304,43 @@ static NSTextField *Label(NSString *s, CGFloat size, NSColor *c, BOOL bold) {
     if (image.length) {
         NSImage *img = [[NSImage alloc] initWithContentsOfFile:image];
         if (img) {
-            NSImageView *iv = [[NSImageView alloc]
+            // The ring is a FRAME with the artwork inset inside it, not a
+            // stroke on the artwork's edge.
+            //
+            // A 1.5pt border on a 40pt tile is a hairline running flush against
+            // busy artwork, and these are only ever read in peripheral vision,
+            // where a hairline is not a signal at all. Two projects with near
+            // identical favicons were still not told apart by maximally
+            // distinct ring colours, because the colour had no area to live
+            // in. Width scales from ICON rather than from the scale factor,
+            // since height is the knob the README tells people to change.
+            CGFloat ringW = MAX(2.5, ICON * 0.09);
+            NSView *ring = [[NSView alloc]
                 initWithFrame:NSMakeRect(PAD, (H - ICON) / 2, ICON, ICON)];
+            ring.wantsLayer = YES;
+            ring.layer.cornerRadius = ICON * 0.22;
+            ring.layer.masksToBounds = YES;
+
+            NSImageView *iv = [[NSImageView alloc]
+                initWithFrame:NSMakeRect(ringW, ringW, ICON - 2 * ringW, ICON - 2 * ringW)];
             iv.image = img;
             iv.imageScaling = NSImageScaleProportionallyUpOrDown;
             iv.wantsLayer = YES;
-            iv.layer.cornerRadius = ICON * 0.22;
+            iv.layer.cornerRadius = (ICON - 2 * ringW) * 0.20;
             iv.layer.masksToBounds = YES;
-            // A uniform ring in the event colour. Deliberately all four sides:
-            // a single coloured edge on a tile is a banned pattern here, and a
-            // ring also survives at small scales where a glyph would not.
-            iv.layer.borderWidth = MAX(1.0, 1.5 * s);
-            iv.layer.borderColor =
-                [RepoRingColor(ringSeed.length ? ringSeed : title) colorWithAlphaComponent:0.95].CGColor;
-            [hit addSubview:iv];
+            // Uniform on all four sides. A single coloured edge on a tile is a
+            // banned pattern here, and a frame also survives at small sizes
+            // where a glyph would not.
+            NSColor *ringColor = ringOverride ?: RepoRingColor(ringSeed.length ? ringSeed : title);
+            ring.layer.backgroundColor = [ringColor colorWithAlphaComponent:0.95].CGColor;
+            [ring addSubview:iv];
+            [hit addSubview:ring];
 
             // Badge, overhanging the icon corner so its size is not capped by
             // the icon. Floored at 11pt: at scale 0.5 a proportional badge
             // would be 9pt and unreadable.
             CGFloat bs = MAX(11.0, ICON * 0.42);
-            NSRect ir = iv.frame;
+            NSRect ir = ring.frame;
             NSImageView *bv = [[NSImageView alloc] initWithFrame:
                 NSMakeRect(NSMaxX(ir) - bs * 0.72, NSMinY(ir) - bs * 0.24, bs, bs)];
             bv.image = badgeImg;
@@ -305,7 +353,7 @@ static NSTextField *Label(NSString *s, CGFloat size, NSColor *c, BOOL bold) {
             bv.layer.cornerRadius = bs / 2;
             bv.layer.borderWidth = MAX(1.0, 1.2 * s);
             bv.layer.borderColor = [NSColor colorWithWhite:0.11 alpha:0.96].CGColor;
-            [hit addSubview:bv positioned:NSWindowAbove relativeTo:iv];
+            [hit addSubview:bv positioned:NSWindowAbove relativeTo:ring];
 
             // Index numeral, top-left of the icon. Deliberately the opposite
             // corner from the event badge (bottom-right of the icon) and the
@@ -320,7 +368,7 @@ static NSTextField *Label(NSString *s, CGFloat size, NSColor *c, BOOL bold) {
             num.layer.backgroundColor = [NSColor colorWithWhite:0.11 alpha:0.96].CGColor;
             num.layer.cornerRadius = ns / 2;
             num.hidden = YES;
-            [hit addSubview:num positioned:NSWindowAbove relativeTo:iv];
+            [hit addSubview:num positioned:NSWindowAbove relativeTo:ring];
             self.indexLabel = num;
             textX = PAD + ICON + 10 * s;
         }
@@ -600,8 +648,15 @@ static void HandleLine(NSString *line) {
     NSString *(^at)(NSUInteger) = ^(NSUInteger i) {
         return i < f.count ? Unescape(f[i]) : @"";
     };
+    // A NEGATIVE timeout means persist until dismissed. An empty field still
+    // means "use the default", which is why 0 and negative are distinguished
+    // rather than both treated as falsy.
+    //
+    // A finish scrolling away after five seconds is correct. A permission
+    // prompt doing the same is the one thing you will miss and then not know
+    // you missed, because nothing is left to say it happened.
     double secs = f.count > 5 ? f[5].doubleValue : 4.5;
-    if (secs <= 0) secs = 4.5;
+    if (secs == 0) secs = 4.5;
     NSString *ev = f.count > 6 ? Unescape(f[6]) : @"done";
     if (ev.length == 0) ev = @"done";
     NSString *pv = f.count > 7 ? Unescape(f[7]) : @"claude";
@@ -626,9 +681,11 @@ static void HandleLine(NSString *line) {
     // Repo path when the caller knows it, so two checkouts with the same
     // basename still differ. Falls back to the title.
     NSString *seed = f.count > 9 ? Unescape(f[9]) : @"";
+    NSColor *override = f.count > 10 ? ParseHexColor(Unescape(f[10])) : nil;
     HudItem *item = [[HudItem alloc] initWithTitle:title subtitle:at(1) body:at(2)
                                              image:img click:at(4) seconds:secs
-                                             event:ev provider:pv ringSeed:seed];
+                                             event:ev provider:pv ringSeed:seed
+                                      ringOverride:override];
     [gMgr add:item];
 }
 
@@ -645,8 +702,26 @@ static int RunDaemon(void) {
 
     NSString *fifo = StatePath(@"hud.fifo");
     NSString *pidf = StatePath(@"hud.pid");
-    unlink(fifo.UTF8String);
-    if (mkfifo(fifo.UTF8String, 0600) != 0) return 1;
+
+    // Reuse an existing FIFO rather than recreating it.
+    //
+    // Unlinking and remaking it orphans any client that already has the old
+    // inode open: its write goes to a FIFO nobody is reading and the banner is
+    // silently lost. That is a live race, not a theoretical one. A cold start
+    // takes seconds, several clients pile up waiting during it, and the first
+    // thing the new daemon did was pull the FIFO out from under them. It shows
+    // up as banners that simply never appear, intermittently, which is easy to
+    // misattribute to the renderer.
+    //
+    // Safe because the flock above guarantees we are the only daemon, so an
+    // existing FIFO can only be one from a dead predecessor, and reusing it
+    // keeps every already-open client connected.
+    struct stat st;
+    BOOL haveFifo = (stat(fifo.UTF8String, &st) == 0 && S_ISFIFO(st.st_mode));
+    if (!haveFifo) {
+        unlink(fifo.UTF8String);
+        if (mkfifo(fifo.UTF8String, 0600) != 0) return 1;
+    }
     int fd = open(fifo.UTF8String, O_RDWR);   // never EOFs, writers never block
     if (fd < 0) return 1;
 
@@ -716,6 +791,28 @@ int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc >= 2 && strcmp(argv[1], "--daemon") == 0) return RunDaemon();
 
+        // How many banners are actually on screen right now.
+        //
+        // For verifying banners from a script. System Events window counts
+        // need Accessibility access, which is often denied, and judging
+        // by screenshot byte size silently breaks the moment anything else
+        // moves into the captured region. CGWindowList asks the window server
+        // directly and needs no special permission.
+        if (argc >= 2 && strcmp(argv[1], "--windows") == 0) {
+            CFArrayRef list = CGWindowListCopyWindowInfo(
+                kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+                kCGNullWindowID);
+            int n = 0;
+            if (list) {
+                for (NSDictionary *w in (__bridge NSArray *)list) {
+                    if ([w[(id)kCGWindowOwnerName] isEqualToString:@"agenthud"]) n++;
+                }
+                CFRelease(list);
+            }
+            printf("%d\n", n);
+            return 0;
+        }
+
         if (argc >= 2 && strcmp(argv[1], "--focus") == 0) {
             // Exit non-zero when there is no daemon, so the hotkey can fall
             // back to the registry lookup.
@@ -750,6 +847,8 @@ int main(int argc, const char *argv[]) {
         [parts addObject:(t && *t && strcmp(t, "0") != 0) ? @"1" : @"0"];
         // argv 9, the repo path, seeds the ring colour.
         [parts addObject:Escape(argc > 9 ? @(argv[9]) : @"")];
+        // argv 10, an explicit ring colour, overriding the hash.
+        [parts addObject:Escape(argc > 10 ? @(argv[10]) : @"")];
         NSString *line = [[parts componentsJoinedByString:@"\t"] stringByAppendingString:@"\n"];
 
         // Start the owner on demand, then hand the banner over. Two banners

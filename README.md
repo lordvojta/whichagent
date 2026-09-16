@@ -101,6 +101,9 @@ Optional. Defaults are the intended experience. Edit `~/.claude/agent-sound.conf
 | `AGENT_FOCUS_DEFAULT` | `vscode` | where to go when a host is unknown |
 | `AGENT_SOUND_PAUSE_MUSIC` | `0` | pause Spotify/Music while a cue plays |
 | `AGENT_NOTIFY_DISABLE` | `0` | sound only, no banner |
+| `AGENT_NOTIFY_ONLY_BLOCKING` | `0` | `1` skips "finished" banners, keeps plan and input |
+| `AGENT_NOTIFY_STICKY` | `1` | plan and input banners stay until dismissed |
+| `AGENT_HUD_RING_<REPO>` | unset | pin a repo's ring colour, e.g. `AGENT_HUD_RING_ACME_WEB="#6df2af"` |
 | `AGENT_STATE_DIR` | `~/.claude/cache/agent-state` | where session state is kept |
 
 To make banners smaller, reduce `AGENT_HUD_HEIGHT`. Do not reach for
